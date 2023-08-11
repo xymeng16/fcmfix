@@ -1,24 +1,112 @@
 package com.kooritea.fcmfix.xposed;
 
+import android.app.ActivityManager;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+
+import com.kooritea.fcmfix.R;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.ArrayList;
+import java.util.List;
+
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class BroadcastFix extends XposedModule {
+    private Process suProc;
+    private DataOutputStream suProcOutputStream;
+    private final String CGROUP_FROZEN_PROCS_PATH = "/sys/fs/cgroup/frozen/cgroup.procs";
+    private final String CGROUP_UNFROZEN_PROCS_PATH = "/sys/fs/cgroup/unfrozen/cgroup.procs";
+    private int currentHandledPID;
+    private boolean isUnfrozen = false;
 
     public BroadcastFix(XC_LoadPackage.LoadPackageParam loadPackageParam) {
         super(loadPackageParam);
+        try {
+            this.suProc = Runtime.getRuntime().exec("su");
+            this.suProcOutputStream = new DataOutputStream(this.suProc.getOutputStream());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     protected void onCanReadConfig() {
         this.startHook();
     }
+
+    private String readExecResult(InputStream is) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int length = 0;
+        while ((length = is.read(buffer)) != -1) {
+            baos.write(buffer, 0, length);
+        }
+        return baos.toString("UTF-8");
+    }
+
+    private String suExecCommand(String command) throws IOException, InterruptedException {
+        this.suProcOutputStream.writeBytes(command);
+        this.suProcOutputStream.flush();
+        this.suProc.waitFor();
+        return readExecResult(this.suProc.getInputStream());
+    }
+
+    private boolean isProcessFrozen(int pid) {
+        try {
+            String result = this.suExecCommand(String.format("grep -w %d %s", pid, this.CGROUP_FROZEN_PROCS_PATH));
+            // TODO: handle possible NullPointerException
+            return Integer.getInteger(result) == pid;
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void freezeProcess(int pid) {
+        // TODO: make sure the process is unfrozen before freezing it
+        try {
+            this.suExecCommand(String.format("echo %d > %d", pid, this.CGROUP_FROZEN_PROCS_PATH));
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void unfreezeProcess(int pid) {
+        // TODO: make sure the process is frozen before unfreezing it
+        try {
+            this.suExecCommand(String.format("echo %d > %d", pid, this.CGROUP_UNFROZEN_PROCS_PATH));
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static String getAppNameByPID(Context context, int pid){
+        ActivityManager manager
+                = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+
+        for(ActivityManager.RunningAppProcessInfo processInfo : manager.getRunningAppProcesses()){
+            if(processInfo.pid == pid){
+                return processInfo.processName;
+            }
+        }
+        return "";
+    }
+
+    private List<String> getPkgListByPkgName(String packageName) {
+        return new ArrayList<>();
+    }
+
+//    private L
 
     protected void startHook(){
         Class<?> clazz = XposedHelpers.findClass("com.android.server.am.ActivityManagerService",loadPackageParam.classLoader);
@@ -131,6 +219,12 @@ public class BroadcastFix extends XposedModule {
                         } else {
                             target = intent.getPackage();
                         }
+
+//                        // check if the process is frozen（support FreezeIt v2 Frozen mode currently)
+//                        pkgList = getPkgListByPkgName(pkgName);
+//                        processList = getProcessListByPkgList(pkgList);
+                        printLog("Receive message for [" + target + "]");
+
                         if(targetIsAllow(target)){
                             int i = (Integer) methodHookParam.args[finalAppOp_args_index];
                             if (i == -1) {
