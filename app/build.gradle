@@ -38,7 +38,17 @@ android {
     ndkVersion '25.2.9519653'
 }
 
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
 dependencies {
+    def libsuVersion = '5.2.0'
+    // The core module that provides APIs to a shell
+    implementation "com.github.topjohnwu.libsu:core:${libsuVersion}"
+    // Optional: APIs for creating root services. Depends on ":core"
+    implementation "com.github.topjohnwu.libsu:service:${libsuVersion}"
+
     compileOnly 'de.robv.android.xposed:api:82'
     compileOnly 'de.robv.android.xposed:api:82:sources'
     implementation fileTree(dir: "libs", include: ["*.jar"])
