@@ -28,9 +28,11 @@ import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class BroadcastFix extends XposedModule {
+    final static String TAG = "BroadcastFix";
     static {
+        // TODO: no need to use root, system user can handle this
         // Set settings before the main shell can be created
-        Shell.enableVerboseLogging = BuildConfig.DEBUG;
+        Shell.enableVerboseLogging = true;
         Shell.setDefaultBuilder(Shell.Builder.create()
                 .setFlags(Shell.FLAG_REDIRECT_STDERR)
                 .setTimeout(10)
@@ -44,7 +46,7 @@ public class BroadcastFix extends XposedModule {
 
     public BroadcastFix(XC_LoadPackage.LoadPackageParam loadPackageParam) {
         super(loadPackageParam);
-        Shell.getShell(shell -> printLog("super user initialized", false));
+        Shell.getShell(shell -> XposedBridge.log("[fcmfix] BroadcastFix rootShell-ready"));
     }
 
     @Override
@@ -73,7 +75,7 @@ public class BroadcastFix extends XposedModule {
 
     private void unfreezeProcess(int pid) {
         // TODO: make sure the process is frozen before unfreezing it
-        this.suExecCommand(String.format("echo %d > %d", pid, this.CGROUP_UNFROZEN_PROCS_PATH));
+        this.suExecCommand("echo " + pid + " > " + this.CGROUP_UNFROZEN_PROCS_PATH);
     }
 
     @SuppressLint("PrivateApi")
